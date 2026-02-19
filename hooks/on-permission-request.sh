@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # Claude Code PermissionRequest Hook
-# Sends an SMS when Claude needs permission, waits for your reply.
+# Sends a Discord DM when Claude needs permission, waits for your reply.
 
-CONFIG_FILE="${CLAUDE_SMS_CONFIG:-$HOME/.config/claude-sms/config}"
+CONFIG_FILE="${CLAUDE_APPROVE_CONFIG:-$HOME/.config/claude-approve/config}"
 
 if [ ! -f "$CONFIG_FILE" ]; then
   echo "Config not found at $CONFIG_FILE. Run install.sh first." >&2
@@ -12,6 +12,8 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 source "$CONFIG_FILE"
+
+DISCORD_API="https://discord.com/api/v10"
 
 # Read hook input from stdin
 INPUT=$(cat)
@@ -28,92 +30,127 @@ format_message() {
   case "$tool" in
     Bash)
       detail=$(echo "$input" | jq -r '.command // "" | tostring')
+      # Wrap in code block for Discord
+      if [ -n "$detail" ]; then
+        detail="\`\`\`
+${detail}
+\`\`\`"
+      fi
       ;;
     Edit)
       local file=$(echo "$input" | jq -r '.file_path // "unknown file"')
-      local old=$(echo "$input" | jq -r '.old_string // "" | tostring' | head -c 80)
-      detail="${file}: ${old}..."
+      local old=$(echo "$input" | jq -r '.old_string // "" | tostring' | head -c 200)
+      detail="\`${file}\`
+\`\`\`
+${old}
+\`\`\`"
       ;;
     Write)
-      detail=$(echo "$input" | jq -r '.file_path // "unknown file"')
+      detail="\`$(echo "$input" | jq -r '.file_path // "unknown file"')\`"
       ;;
     Read)
-      detail=$(echo "$input" | jq -r '.file_path // "unknown file"')
+      detail="\`$(echo "$input" | jq -r '.file_path // "unknown file"')\`"
       ;;
     Task)
-      detail=$(echo "$input" | jq -r '.description // .prompt // "" | tostring' | head -c 120)
+      detail=$(echo "$input" | jq -r '.description // .prompt // "" | tostring' | head -c 200)
       ;;
     *)
-      detail=$(echo "$input" | jq -r 'tostring' | head -c 120)
+      detail=$(echo "$input" | jq -r 'tostring' | head -c 200)
       ;;
   esac
 
-  # Truncate detail to keep SMS reasonable
-  if [ ${#detail} -gt 300 ]; then
-    detail="${detail:0:297}..."
+  # Truncate detail for Discord message limit
+  if [ ${#detail} -gt 1500 ]; then
+    detail="${detail:0:1497}..."
   fi
 
-  echo "Claude wants to use: ${tool}"
+  local msg="**Claude wants to use: ${tool}**"
   if [ -n "$detail" ]; then
-    echo ""
-    echo "${detail}"
+    msg="${msg}
+${detail}"
   fi
-  echo ""
-  echo "Reply Y to allow, N to deny."
+  msg="${msg}
+
+Reply **Y** to allow, **N** to deny."
+
+  echo "$msg"
 }
 
 MESSAGE=$(format_message "$TOOL_NAME" "$TOOL_INPUT")
 
-# Get the most recent inbound message SID so we can detect new replies
-LAST_MSG_SID=$(curl -sf \
-  "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json?To=${TWILIO_PHONE_NUMBER}&From=${YOUR_PHONE_NUMBER}&PageSize=1" \
-  -u "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}" \
-  | jq -r '.messages[0].sid // "none"' 2>/dev/null || echo "none")
+# Open a DM channel with the user (idempotent — always returns the same channel)
+DM_CHANNEL=$(curl -sf -X POST "${DISCORD_API}/users/@me/channels" \
+  -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "{\"recipient_id\": \"${DISCORD_USER_ID}\"}" \
+  | jq -r '.id // empty')
 
-# Send the SMS
-SEND_RESPONSE=$(curl -sf -X POST \
-  "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json" \
-  -u "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}" \
-  --data-urlencode "To=${YOUR_PHONE_NUMBER}" \
-  --data-urlencode "From=${TWILIO_PHONE_NUMBER}" \
-  --data-urlencode "Body=${MESSAGE}" 2>/dev/null)
-
-if [ $? -ne 0 ]; then
-  echo "Failed to send SMS. Check Twilio config." >&2
+if [ -z "$DM_CHANNEL" ]; then
+  echo "Failed to open Discord DM channel. Check bot token and user ID." >&2
   exit 2
 fi
 
+# Get the latest message ID so we can detect new replies
+LAST_MSG_ID=$(curl -sf "${DISCORD_API}/channels/${DM_CHANNEL}/messages?limit=1" \
+  -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" \
+  | jq -r '.[0].id // "0"' 2>/dev/null || echo "0")
+
+# Send the DM
+PAYLOAD=$(jq -n --arg content "$MESSAGE" '{"content": $content}')
+SEND_RESPONSE=$(curl -sf -X POST "${DISCORD_API}/channels/${DM_CHANNEL}/messages" \
+  -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$PAYLOAD" 2>/dev/null)
+
+if [ $? -ne 0 ]; then
+  echo "Failed to send Discord DM." >&2
+  exit 2
+fi
+
+BOT_MSG_ID=$(echo "$SEND_RESPONSE" | jq -r '.id // "0"')
+
 # Poll for a reply
-TIMEOUT="${SMS_TIMEOUT:-120}"
-POLL_INTERVAL="${SMS_POLL_INTERVAL:-3}"
+TIMEOUT="${REPLY_TIMEOUT:-120}"
+POLL_INTERVAL="${REPLY_POLL_INTERVAL:-3}"
 ELAPSED=0
 
 while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
   sleep "$POLL_INTERVAL"
   ELAPSED=$((ELAPSED + POLL_INTERVAL))
 
-  RESPONSE=$(curl -sf \
-    "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json?To=${TWILIO_PHONE_NUMBER}&From=${YOUR_PHONE_NUMBER}&PageSize=1" \
-    -u "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}" 2>/dev/null || echo '{"messages":[]}')
+  # Get messages after our bot message
+  MESSAGES=$(curl -sf "${DISCORD_API}/channels/${DM_CHANNEL}/messages?after=${BOT_MSG_ID}&limit=5" \
+    -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" 2>/dev/null || echo '[]')
 
-  NEW_SID=$(echo "$RESPONSE" | jq -r '.messages[0].sid // "none"')
+  # Find the first message from the user (not the bot)
+  REPLY=$(echo "$MESSAGES" | jq -r --arg uid "$DISCORD_USER_ID" '
+    [.[] | select(.author.id == $uid)] | first | .content // empty
+  ' 2>/dev/null || echo "")
 
-  if [ "$NEW_SID" != "$LAST_MSG_SID" ] && [ "$NEW_SID" != "none" ]; then
-    REPLY=$(echo "$RESPONSE" | jq -r '.messages[0].body // ""' | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+  if [ -n "$REPLY" ]; then
+    REPLY_CLEAN=$(echo "$REPLY" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
 
-    case "$REPLY" in
+    case "$REPLY_CLEAN" in
       1|y|yes|allow|ok)
+        # React with checkmark to confirm
+        curl -sf -X PUT "${DISCORD_API}/channels/${DM_CHANNEL}/messages/${BOT_MSG_ID}/reactions/%E2%9C%85/@me" \
+          -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" > /dev/null 2>&1 || true
         echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
         exit 0
         ;;
       *)
-        echo "Denied via SMS (reply: ${REPLY})" >&2
+        # React with X to confirm denial
+        curl -sf -X PUT "${DISCORD_API}/channels/${DM_CHANNEL}/messages/${BOT_MSG_ID}/reactions/%E2%9D%8C/@me" \
+          -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" > /dev/null 2>&1 || true
+        echo "Denied via Discord (reply: ${REPLY_CLEAN})" >&2
         exit 2
         ;;
     esac
   fi
 done
 
-# Timed out — deny by default
-echo "No SMS reply received within ${TIMEOUT}s. Denying." >&2
+# Timed out — deny by default, react with clock
+curl -sf -X PUT "${DISCORD_API}/channels/${DM_CHANNEL}/messages/${BOT_MSG_ID}/reactions/%E2%8F%B0/@me" \
+  -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" > /dev/null 2>&1 || true
+echo "No Discord reply received within ${TIMEOUT}s. Denying." >&2
 exit 2

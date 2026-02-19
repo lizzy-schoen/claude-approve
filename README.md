@@ -1,77 +1,102 @@
-# claude-sms-approve
+# claude-approve
 
-Get texted when Claude Code needs your permission — reply to approve or deny from your phone.
+Get a Discord DM when Claude Code needs your permission — reply to approve or deny from your phone.
 
-Uses [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) + [Twilio](https://www.twilio.com/) to turn permission prompts into SMS conversations.
+Uses [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) + a Discord bot to turn permission prompts into DM conversations.
 
 ## How it works
 
 ```
 Claude wants to run: npm test
-  → You get a text: "Claude wants to use: Bash — npm test — Reply Y to allow, N to deny."
-  → You reply "Y"
-  → Claude continues
+  → Your bot DMs you: "Claude wants to use: Bash — npm test — Reply Y to allow, N to deny."
+  → You reply "Y" in Discord
+  → Bot reacts ✅ and Claude continues
 ```
 
-When Claude finishes a task and is waiting for your next prompt, you get a heads-up text too.
+When Claude finishes a task and is waiting for your next prompt, you get a heads-up DM too.
 
 ## Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed
-- A [Twilio account](https://www.twilio.com/try-twilio) with a phone number (~$1/month + fractions of a cent per SMS)
+- A Discord account
 - `jq` and `curl` installed (`brew install jq` on macOS)
 
-## Setup
+## Setup (~5 minutes)
+
+### 1. Create a Discord bot
+
+1. Go to [discord.com/developers/applications](https://discord.com/developers/applications)
+2. Click **New Application**, give it a name (e.g. "Claude Approve"), click Create
+3. Go to **Bot** in the sidebar
+4. Click **Reset Token** and copy it — you'll need this in a moment
+5. Enable **Message Content Intent** under Privileged Gateway Intents
+6. Go to **OAuth2** in the sidebar
+7. Under **OAuth2 URL Generator**, check the `bot` scope
+8. Under **Bot Permissions**, check `Send Messages` and `Read Message History`
+9. Copy the generated URL, open it in your browser, and invite the bot to any server you're in
+
+### 2. Get your Discord User ID
+
+1. Open Discord Settings > Advanced > enable **Developer Mode**
+2. Right-click your own name anywhere and click **Copy User ID**
+
+### 3. Run the installer
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/claude-sms-approve.git
-cd claude-sms-approve
+git clone https://github.com/YOUR_USERNAME/claude-approve.git
+cd claude-approve
 ./install.sh
 ```
 
-The installer will ask for your Twilio credentials and phone numbers, then configure the Claude Code hooks automatically.
-
-### Twilio setup (2 minutes)
-
-1. Sign up at [twilio.com/try-twilio](https://www.twilio.com/try-twilio)
-2. Get a phone number from the console (or use the one they give you on the trial)
-3. Find your **Account SID** and **Auth Token** on the [console dashboard](https://console.twilio.com/)
-4. That's it — the install script handles the rest
-
-> **Trial accounts**: Twilio trial accounts work fine, but you'll need to [verify your phone number](https://console.twilio.com/us1/develop/phone-numbers/manage/verified) first.
+It'll ask for your bot token, user ID, and timeout preferences, then wire everything up.
 
 ## Usage
 
-Just use Claude Code normally. Whenever it needs permission to run a tool, you'll get a text instead of (or in addition to) the terminal prompt.
+Just use Claude Code normally. Whenever it needs permission to run a tool, your bot will DM you instead of (or in addition to) the terminal prompt.
 
 **Reply options:**
-- `Y`, `1`, `yes`, `ok`, `allow` — approve
-- Anything else (or no reply) — deny
+- `Y`, `1`, `yes`, `ok`, `allow` — approve (bot reacts ✅)
+- Anything else — deny (bot reacts ❌)
+- No reply — auto-deny after timeout (bot reacts ⏰)
 
-**Timeout**: If you don't reply within 2 minutes (configurable), the request is denied automatically.
+**Timeout**: Default is 120 seconds (configurable).
 
 ## Configuration
 
-Config lives at `~/.config/claude-sms/config`. You can edit it directly:
+Config lives at `~/.config/claude-approve/config`. Edit it directly:
 
 ```bash
-# Twilio credentials
-TWILIO_ACCOUNT_SID="ACxxxxxxxx"
-TWILIO_AUTH_TOKEN="xxxxxxxx"
-TWILIO_PHONE_NUMBER="+15551234567"
-YOUR_PHONE_NUMBER="+15559876543"
-
-# Timing
-SMS_TIMEOUT=120        # seconds to wait for reply
-SMS_POLL_INTERVAL=3    # seconds between checks for reply
+DISCORD_BOT_TOKEN="your-bot-token"
+DISCORD_USER_ID="your-discord-user-id"
+REPLY_TIMEOUT=120        # seconds to wait for reply
+REPLY_POLL_INTERVAL=3    # seconds between checks
 ```
 
-## What triggers a text?
+## What triggers a DM?
 
 | Event | What happens |
 |-------|-------------|
-| Claude needs permission to use a tool | Two-way SMS — reply to approve/deny |
-| Claude is idle, waiting for input | One-way text — just a heads up |
+| Claude needs permission to use a tool | Two-way DM — reply to approve/deny |
+| Claude is idle, waiting for input | One-way DM — just a heads up |
+
+## Testing
+
+Run this to send yourself a test DM:
+
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"echo hello"}}' | ./hooks/on-permission-request.sh
+```
+
+Reply Y or N in Discord to confirm it's working.
+
+## Sharing with your team
+
+Each person needs to:
+1. Clone this repo
+2. Run `./install.sh` with their own Discord User ID
+3. Make sure they're in a server with the bot
+
+You can use the **same bot** for everyone — each person just provides their own User ID and the bot DMs them individually.
 
 ## Uninstall
 
@@ -79,17 +104,17 @@ SMS_POLL_INTERVAL=3    # seconds between checks for reply
 ./uninstall.sh
 ```
 
-Removes the hooks from Claude Code settings. Optionally deletes your Twilio config.
+Removes the hooks from Claude Code settings. Optionally deletes your config.
 
 ## How it works (technical)
 
 This uses two Claude Code [hooks](https://docs.anthropic.com/en/docs/claude-code/hooks):
 
-1. **`PermissionRequest` hook** (`hooks/on-permission-request.sh`): Fires when Claude needs tool permission. Sends you an SMS via Twilio's REST API, then polls for your inbound reply. Returns a JSON decision (allow/deny) that Claude Code respects.
+1. **`PermissionRequest` hook** (`hooks/on-permission-request.sh`): Fires when Claude needs tool permission. Opens a DM channel via Discord API, sends the request, then polls for your reply message. Returns a JSON decision (allow/deny) that Claude Code respects. Adds emoji reactions to confirm the outcome.
 
-2. **`Notification` hook** (`hooks/on-notify.sh`): Fires when Claude is idle. Sends a one-way SMS as a heads-up. Runs async so it doesn't block anything.
+2. **`Notification` hook** (`hooks/on-notify.sh`): Fires when Claude is idle. Sends a one-way DM. Runs async so it doesn't block anything.
 
-The permission hook is blocking by design — Claude Code is already waiting for a decision, so the script just holds that spot while it waits for your text. Default timeout is 600s on the Claude Code side, and the SMS timeout (default 120s) kicks in well before that.
+The permission hook is blocking by design — Claude Code is already waiting for a decision, so the script holds that spot while it waits for your Discord reply.
 
 ## License
 
