@@ -48,6 +48,9 @@ REPLY_TIMEOUT="${REPLY_TIMEOUT:-120}"
 read -rp "Poll interval in seconds [3]: " REPLY_POLL_INTERVAL
 REPLY_POLL_INTERVAL="${REPLY_POLL_INTERVAL:-3}"
 
+read -rp "Project directory for remote commands [$(pwd)]: " PROJECT_DIR
+PROJECT_DIR="${PROJECT_DIR:-$(pwd)}"
+
 # Verify the bot token works
 echo ""
 echo "Verifying bot token..."
@@ -84,6 +87,7 @@ DISCORD_BOT_TOKEN="${DISCORD_BOT_TOKEN}"
 DISCORD_USER_ID="${DISCORD_USER_ID}"
 REPLY_TIMEOUT="${REPLY_TIMEOUT}"
 REPLY_POLL_INTERVAL="${REPLY_POLL_INTERVAL}"
+PROJECT_DIR="${PROJECT_DIR}"
 EOF
 
 chmod 600 "$CONFIG_FILE"
@@ -155,6 +159,18 @@ UPDATED=$(jq --argjson hooks "$HOOKS_JSON" --arg rule "$ALLOW_RULE" '
 echo "$UPDATED" > "$SETTINGS_FILE"
 echo "Hooks added to $SETTINGS_FILE"
 
+# Install bot dependencies
+if command -v node &>/dev/null && command -v npm &>/dev/null; then
+  echo ""
+  echo "Installing bot dependencies..."
+  (cd "$SCRIPT_DIR/bot" && npm install --production 2>&1) || \
+    echo "Warning: npm install failed. Run 'cd bot && npm install' manually." >&2
+else
+  echo ""
+  echo "Note: Node.js is required for remote commands. Install it, then run:"
+  echo "  cd $SCRIPT_DIR/bot && npm install"
+fi
+
 echo ""
 echo "=== Setup complete! ==="
 echo ""
@@ -163,6 +179,12 @@ echo "  - When Claude needs permission, you'll get a Discord DM from your bot."
 echo "  - Reply Y to allow, N (or anything else) to deny."
 echo "  - If you don't reply within ${REPLY_TIMEOUT}s, it denies by default."
 echo "  - You'll also get a DM when Claude is idle and waiting for input."
+echo ""
+echo "Remote commands (optional):"
+echo "  Start the bot to send Claude commands from Discord:"
+echo "    cd $SCRIPT_DIR/bot && npm start"
+echo "  Or run it in the background:"
+echo "    nohup node $SCRIPT_DIR/bot/index.js >> ~/.config/claude-approve/bot.log 2>&1 &"
 echo ""
 echo "Toggle on/off (within a session):"
 echo "  claude-approve disable   # use normal terminal prompts"

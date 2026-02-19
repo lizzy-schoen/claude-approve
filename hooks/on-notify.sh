@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Claude Code Notification Hook
-# Sends a one-way Discord DM when Claude is idle / waiting for input.
+# Sends a Discord DM when Claude is idle / waiting for input.
+# Includes Claude's last message so you can see what was said.
 
 # Check if claude-approve is enabled (disabled = no Discord notifications)
 STATE_FILE="$HOME/.config/claude-approve/enabled"
@@ -29,13 +30,42 @@ NOTIFICATION_TYPE=$(echo "$INPUT" | jq -r '.notification_type // "unknown"')
 # Only send for relevant notification types
 case "$NOTIFICATION_TYPE" in
   idle_prompt)
-    MESSAGE="Claude Code is waiting for your input."
     ;;
   *)
     # Skip other notification types (permission_prompt is handled by the PermissionRequest hook)
     exit 0
     ;;
 esac
+
+# Try to extract Claude's last message from the most recent session file
+LAST_MSG=""
+LATEST_SESSION=$(ls -t "$HOME"/.claude/projects/*/*.jsonl 2>/dev/null | head -1)
+
+if [ -n "$LATEST_SESSION" ] && [ -f "$LATEST_SESSION" ]; then
+  # Find the last assistant message that has text content, extract and join its text blocks
+  LAST_MSG=$(tail -100 "$LATEST_SESSION" 2>/dev/null | \
+    jq -c 'select(.type == "assistant") | [.message.content[]? | select(.type == "text") | .text] | select(length > 0)' 2>/dev/null | \
+    tail -1 | \
+    jq -r 'join("\n")' 2>/dev/null)
+
+  # Truncate for Discord (leave room for the header)
+  if [ ${#LAST_MSG} -gt 1500 ]; then
+    LAST_MSG="${LAST_MSG:0:1497}..."
+  fi
+fi
+
+# Build the Discord message
+if [ -n "$LAST_MSG" ]; then
+  MESSAGE="**Claude Code is waiting for your input.**
+
+${LAST_MSG}
+
+_Reply here to continue the conversation._"
+else
+  MESSAGE="**Claude Code is waiting for your input.**
+
+_Reply here to continue the conversation._"
+fi
 
 # Open DM channel and send message
 DM_CHANNEL=$(curl -sf -X POST "${DISCORD_API}/users/@me/channels" \

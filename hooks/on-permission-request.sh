@@ -19,6 +19,11 @@ fi
 
 source "$CONFIG_FILE"
 
+# Signal to the Discord bot that a permission request is active
+LOCK_FILE="/tmp/claude-approve.lock"
+echo "$$" > "$LOCK_FILE"
+trap 'rm -f "$LOCK_FILE"' EXIT INT TERM HUP
+
 DISCORD_API="https://discord.com/api/v10"
 
 # Read hook input from stdin
