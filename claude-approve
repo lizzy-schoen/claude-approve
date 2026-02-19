@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# claude-approve — toggle Discord approval hooks on/off
+# When disabled, Claude Code falls through to normal terminal prompts.
+
+STATE_FILE="$HOME/.config/claude-approve/enabled"
+
+ensure_state_file() {
+  local dir
+  dir="$(dirname "$STATE_FILE")"
+  mkdir -p "$dir"
+  if [ ! -f "$STATE_FILE" ]; then
+    echo "true" > "$STATE_FILE"
+  fi
+}
+
+is_enabled() {
+  ensure_state_file
+  [ "$(cat "$STATE_FILE")" = "true" ]
+}
+
+case "${1:-}" in
+  enable)
+    ensure_state_file
+    echo "true" > "$STATE_FILE"
+    echo "claude-approve enabled — permission requests will go through Discord."
+    ;;
+  disable)
+    ensure_state_file
+    echo "false" > "$STATE_FILE"
+    echo "claude-approve disabled — using normal terminal prompts."
+    ;;
+  status)
+    if is_enabled; then
+      echo "claude-approve is enabled (Discord approval active)"
+    else
+      echo "claude-approve is disabled (using terminal prompts)"
+    fi
+    ;;
+  *)
+    echo "Usage: claude-approve <enable|disable|status>"
+    exit 1
+    ;;
+esac

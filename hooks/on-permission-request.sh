@@ -4,6 +4,12 @@ set -euo pipefail
 # Claude Code PermissionRequest Hook
 # Sends a Discord DM when Claude needs permission, waits for your reply.
 
+# Check if claude-approve is enabled (disabled = fall through to terminal prompts)
+STATE_FILE="$HOME/.config/claude-approve/enabled"
+if [ -f "$STATE_FILE" ] && [ "$(cat "$STATE_FILE")" = "false" ]; then
+  exit 0
+fi
+
 CONFIG_FILE="${CLAUDE_APPROVE_CONFIG:-$HOME/.config/claude-approve/config}"
 
 if [ ! -f "$CONFIG_FILE" ]; then

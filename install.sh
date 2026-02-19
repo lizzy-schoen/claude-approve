@@ -87,12 +87,26 @@ REPLY_POLL_INTERVAL="${REPLY_POLL_INTERVAL}"
 EOF
 
 chmod 600 "$CONFIG_FILE"
+
+# Create initial enabled state
+echo "true" > "$CONFIG_DIR/enabled"
+
 echo ""
 echo "Config saved to $CONFIG_FILE"
 
-# Make hook scripts executable
+# Make scripts executable
 chmod +x "$SCRIPT_DIR/hooks/on-permission-request.sh"
 chmod +x "$SCRIPT_DIR/hooks/on-notify.sh"
+chmod +x "$SCRIPT_DIR/claude-approve"
+
+# Symlink CLI to PATH
+if [ -d "/usr/local/bin" ]; then
+  ln -sf "$SCRIPT_DIR/claude-approve" /usr/local/bin/claude-approve 2>/dev/null && \
+    echo "CLI installed: claude-approve enable|disable|status" || \
+    echo "Note: Run 'sudo ln -sf $SCRIPT_DIR/claude-approve /usr/local/bin/claude-approve' to add the CLI to your PATH."
+else
+  echo "Note: Add $SCRIPT_DIR to your PATH to use 'claude-approve enable|disable|status'."
+fi
 
 # Add hooks to Claude Code settings
 mkdir -p "$(dirname "$SETTINGS_FILE")"
@@ -147,6 +161,11 @@ echo "  - When Claude needs permission, you'll get a Discord DM from your bot."
 echo "  - Reply Y to allow, N (or anything else) to deny."
 echo "  - If you don't reply within ${REPLY_TIMEOUT}s, it denies by default."
 echo "  - You'll also get a DM when Claude is idle and waiting for input."
+echo ""
+echo "Toggle on/off (within a session):"
+echo "  claude-approve disable   # use normal terminal prompts"
+echo "  claude-approve enable    # back to Discord approval"
+echo "  claude-approve status    # check current state"
 echo ""
 echo "To test:"
 echo "  echo '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo hello\"}}' | ${SCRIPT_DIR}/hooks/on-permission-request.sh"

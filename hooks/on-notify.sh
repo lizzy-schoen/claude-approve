@@ -4,6 +4,12 @@ set -euo pipefail
 # Claude Code Notification Hook
 # Sends a one-way Discord DM when Claude is idle / waiting for input.
 
+# Check if claude-approve is enabled (disabled = no Discord notifications)
+STATE_FILE="$HOME/.config/claude-approve/enabled"
+if [ -f "$STATE_FILE" ] && [ "$(cat "$STATE_FILE")" = "false" ]; then
+  exit 0
+fi
+
 CONFIG_FILE="${CLAUDE_APPROVE_CONFIG:-$HOME/.config/claude-approve/config}"
 
 if [ ! -f "$CONFIG_FILE" ]; then
