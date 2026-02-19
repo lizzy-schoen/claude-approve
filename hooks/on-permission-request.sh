@@ -78,6 +78,36 @@ Reply **Y** to allow, **N** to deny."
 
 MESSAGE=$(format_message "$TOOL_NAME" "$TOOL_INPUT")
 
+# Also show in terminal (plain text, no Discord markdown)
+format_terminal_message() {
+  local tool="$1"
+  local input="$2"
+  local detail=""
+
+  case "$tool" in
+    Bash)
+      detail=$(echo "$input" | jq -r '.command // "" | tostring')
+      ;;
+    Edit|Write|Read)
+      detail=$(echo "$input" | jq -r '.file_path // "unknown file"')
+      ;;
+    Task)
+      detail=$(echo "$input" | jq -r '.description // .prompt // "" | tostring' | head -c 120)
+      ;;
+    *)
+      detail=$(echo "$input" | jq -r 'tostring' | head -c 120)
+      ;;
+  esac
+
+  echo "[claude-approve] Claude wants to use: ${tool}"
+  if [ -n "$detail" ]; then
+    echo "  ${detail}"
+  fi
+  echo "  Waiting for Discord reply..."
+}
+
+format_terminal_message "$TOOL_NAME" "$TOOL_INPUT" >&2
+
 # Open a DM channel with the user (idempotent — always returns the same channel)
 DM_CHANNEL=$(curl -sf -X POST "${DISCORD_API}/users/@me/channels" \
   -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" \
@@ -135,6 +165,7 @@ while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
         # React with checkmark to confirm
         curl -sf -X PUT "${DISCORD_API}/channels/${DM_CHANNEL}/messages/${BOT_MSG_ID}/reactions/%E2%9C%85/@me" \
           -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" > /dev/null 2>&1 || true
+        echo "[claude-approve] Allowed via Discord" >&2
         echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
         exit 0
         ;;
@@ -142,7 +173,7 @@ while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
         # React with X to confirm denial
         curl -sf -X PUT "${DISCORD_API}/channels/${DM_CHANNEL}/messages/${BOT_MSG_ID}/reactions/%E2%9D%8C/@me" \
           -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" > /dev/null 2>&1 || true
-        echo "Denied via Discord (reply: ${REPLY_CLEAN})" >&2
+        echo "[claude-approve] Denied via Discord" >&2
         exit 2
         ;;
     esac
@@ -152,5 +183,5 @@ done
 # Timed out — deny by default, react with clock
 curl -sf -X PUT "${DISCORD_API}/channels/${DM_CHANNEL}/messages/${BOT_MSG_ID}/reactions/%E2%8F%B0/@me" \
   -H "Authorization: Bot ${DISCORD_BOT_TOKEN}" > /dev/null 2>&1 || true
-echo "No Discord reply received within ${TIMEOUT}s. Denying." >&2
+echo "[claude-approve] No Discord reply received within ${TIMEOUT}s. Denying." >&2
 exit 2
