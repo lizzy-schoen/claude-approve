@@ -55,6 +55,18 @@ Just use Claude Code normally. Whenever it needs permission to run a tool, your 
 
 **Timeout**: Default is 120 seconds (configurable).
 
+## Enable / Disable
+
+Toggle Discord approval on or off without changing your setup:
+
+```bash
+claude-approve disable   # use normal terminal prompts
+claude-approve enable    # back to Discord approval
+claude-approve status    # check current state
+```
+
+When disabled, Claude Code falls through to its normal terminal permission prompts — no Discord messages are sent. When you re-enable, Discord approval picks back up immediately. Enabled by default after install.
+
 ## Configuration
 
 Config lives at `~/.config/claude-approve/config`. Edit it directly:
