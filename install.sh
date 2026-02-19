@@ -145,9 +145,11 @@ HOOKS_JSON=$(cat <<EOF
 EOF
 )
 
-# Merge hooks into existing settings (preserving other settings and hooks)
-UPDATED=$(jq --argjson hooks "$HOOKS_JSON" '
+# Merge hooks and permissions into existing settings
+ALLOW_RULE="Bash(${SCRIPT_DIR}/claude-approve *)"
+UPDATED=$(jq --argjson hooks "$HOOKS_JSON" --arg rule "$ALLOW_RULE" '
   .hooks = ((.hooks // {}) * $hooks)
+  | .permissions.allow = ((.permissions.allow // []) + [$rule] | unique)
 ' "$SETTINGS_FILE")
 
 echo "$UPDATED" > "$SETTINGS_FILE"
