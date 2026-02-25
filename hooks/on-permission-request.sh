@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Claude Code PermissionRequest Hook
-# Sends a Discord DM when Claude needs permission, waits for your reply.
+# Routes permission requests to Discord or Alexa based on configured mode.
 
 # Check if claude-approve is enabled (disabled = fall through to terminal prompts)
 STATE_FILE="$HOME/.config/claude-approve/enabled"
@@ -19,15 +19,55 @@ fi
 
 source "$CONFIG_FILE"
 
+# Read hook input from stdin (must happen before any dispatch)
+INPUT=$(cat)
+
+# Resolve approval channel — check DynamoDB if Alexa is configured, else use local config
+APPROVAL_CHANNEL="${APPROVAL_CHANNEL:-discord}"
+if [ -n "${ALEXA_API_URL:-}" ] && [ -n "${ALEXA_API_KEY:-}" ]; then
+  MODE_RESPONSE=$(curl -sf "${ALEXA_API_URL}/mode" -H "x-api-key: ${ALEXA_API_KEY}" 2>/dev/null || echo "")
+  if [ -n "$MODE_RESPONSE" ]; then
+    REMOTE_MODE=$(echo "$MODE_RESPONSE" | jq -r '.mode // empty' 2>/dev/null || echo "")
+    [ -n "$REMOTE_MODE" ] && APPROVAL_CHANNEL="$REMOTE_MODE"
+  fi
+fi
+
+if [ "$APPROVAL_CHANNEL" = "off" ]; then
+  exit 0  # fall through to terminal prompts
+fi
+
+if [ "$APPROVAL_CHANNEL" = "alexa" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  # Show in terminal, then hand off to alexa-request.sh
+  TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
+  TOOL_INPUT=$(echo "$INPUT" | jq -r '.tool_input // {}')
+  format_terminal_message() {
+    local tool="$1"
+    local input="$2"
+    local detail=""
+    case "$tool" in
+      Bash) detail=$(echo "$input" | jq -r '.command // "" | tostring') ;;
+      Edit|Write|Read) detail=$(echo "$input" | jq -r '.file_path // "unknown file"') ;;
+      Task) detail=$(echo "$input" | jq -r '.description // .prompt // "" | tostring' | head -c 120) ;;
+      *) detail=$(echo "$input" | jq -r 'tostring' | head -c 120) ;;
+    esac
+    echo "[claude-approve] Claude wants to use: ${tool}"
+    [ -n "$detail" ] && echo "  ${detail}"
+    echo "  Waiting for Alexa approval..."
+  }
+  format_terminal_message "$TOOL_NAME" "$TOOL_INPUT" >&2
+  echo "$INPUT" | "$SCRIPT_DIR/alexa-request.sh"
+  exit $?
+fi
+
+# --- Discord channel (default) ---
+
 # Signal to the Discord bot that a permission request is active
 LOCK_FILE="/tmp/claude-approve.lock"
 echo "$$" > "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"' EXIT INT TERM HUP
 
 DISCORD_API="https://discord.com/api/v10"
-
-# Read hook input from stdin
-INPUT=$(cat)
 
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
 TOOL_INPUT=$(echo "$INPUT" | jq -r '.tool_input // {}')

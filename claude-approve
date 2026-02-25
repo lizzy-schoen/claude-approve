@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# claude-approve — toggle Discord approval hooks on/off
+# claude-approve — toggle approval hooks on/off and switch modes
 # When disabled, Claude Code falls through to normal terminal prompts.
+# When Alexa is configured, `mode` subcommand switches between voice/text/off.
 
 STATE_FILE="$HOME/.config/claude-approve/enabled"
+CONFIG_FILE="${CLAUDE_APPROVE_CONFIG:-$HOME/.config/claude-approve/config}"
 
 ensure_state_file() {
   local dir
@@ -20,6 +22,74 @@ is_enabled() {
   [ "$(cat "$STATE_FILE")" = "true" ]
 }
 
+# Load config for Alexa API access (if available)
+load_config() {
+  if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+  fi
+}
+
+# Mode subcommand — get or set the approval channel via API
+handle_mode() {
+  load_config
+
+  if [ -z "${ALEXA_API_URL:-}" ] || [ -z "${ALEXA_API_KEY:-}" ]; then
+    echo "Alexa is not configured. Run alexa/setup.sh first." >&2
+    echo "Current approval channel: ${APPROVAL_CHANNEL:-discord} (from local config)"
+    exit 1
+  fi
+
+  local mode_arg="${1:-}"
+
+  if [ -z "$mode_arg" ]; then
+    # Get current mode
+    local response
+    response=$(curl -sf "${ALEXA_API_URL}/mode" -H "x-api-key: ${ALEXA_API_KEY}" 2>/dev/null || echo "")
+    if [ -z "$response" ]; then
+      echo "Failed to reach API. Check ALEXA_API_URL and ALEXA_API_KEY." >&2
+      exit 1
+    fi
+    local current
+    current=$(echo "$response" | jq -r '.mode // "unknown"')
+    case "$current" in
+      discord) echo "Mode: text (Discord)" ;;
+      alexa)   echo "Mode: voice (Alexa)" ;;
+      off)     echo "Mode: off (terminal prompts)" ;;
+      *)       echo "Mode: $current" ;;
+    esac
+    return
+  fi
+
+  # Set mode
+  local target
+  case "$mode_arg" in
+    voice|alexa)   target="alexa" ;;
+    text|discord)  target="discord" ;;
+    off)           target="off" ;;
+    *)
+      echo "Usage: claude-approve mode [voice|text|off]" >&2
+      exit 1
+      ;;
+  esac
+
+  local response
+  response=$(curl -sf -X PUT "${ALEXA_API_URL}/mode" \
+    -H "x-api-key: ${ALEXA_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "{\"mode\": \"${target}\"}" 2>/dev/null || echo "")
+
+  if [ -z "$response" ]; then
+    echo "Failed to set mode. Check API connection." >&2
+    exit 1
+  fi
+
+  case "$target" in
+    alexa)   echo "Switched to voice mode (Alexa)." ;;
+    discord) echo "Switched to text mode (Discord)." ;;
+    off)     echo "Approval disabled (terminal prompts)." ;;
+  esac
+}
+
 case "${1:-}" in
   enable)
     ensure_state_file
@@ -33,13 +103,29 @@ case "${1:-}" in
     ;;
   status)
     if is_enabled; then
-      echo "claude-approve is enabled (Discord approval active)"
+      echo "claude-approve is enabled"
+      load_config
+      if [ -n "${ALEXA_API_URL:-}" ] && [ -n "${ALEXA_API_KEY:-}" ]; then
+        local_mode=$(curl -sf "${ALEXA_API_URL}/mode" -H "x-api-key: ${ALEXA_API_KEY}" 2>/dev/null \
+          | jq -r '.mode // empty' 2>/dev/null || echo "")
+        case "$local_mode" in
+          discord) echo "  Mode: text (Discord)" ;;
+          alexa)   echo "  Mode: voice (Alexa)" ;;
+          off)     echo "  Mode: off (terminal prompts)" ;;
+          *)       echo "  Mode: ${APPROVAL_CHANNEL:-discord} (local config)" ;;
+        esac
+      else
+        echo "  Channel: Discord (Alexa not configured)"
+      fi
     else
       echo "claude-approve is disabled (using terminal prompts)"
     fi
     ;;
+  mode)
+    handle_mode "${2:-}"
+    ;;
   *)
-    echo "Usage: claude-approve <enable|disable|status>"
+    echo "Usage: claude-approve <enable|disable|status|mode [voice|text|off]>"
     exit 1
     ;;
 esac

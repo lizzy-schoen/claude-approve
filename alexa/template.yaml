@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: claude-approve Alexa backend — DynamoDB, API Gateway, and Lambda functions
+
+Parameters:
+  AlexaClientId:
+    Type: String
+    Default: 'none'
+    Description: Alexa Proactive Events client ID (from skill Permissions tab) — enter 'none' to skip
+  AlexaClientSecret:
+    Type: String
+    Default: 'none'
+    Description: Alexa Proactive Events client secret — enter 'none' to skip
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 10
+    Architectures:
+      - arm64
+
+Resources:
+  # DynamoDB table — stores mode + current request
+  RequestsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: claude-approve
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # API Lambda — handles mode + request endpoints, sends proactive events
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      CodeUri: api-handler/
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref RequestsTable
+          ALEXA_CLIENT_ID: !Ref AlexaClientId
+          ALEXA_CLIENT_SECRET: !Ref AlexaClientSecret
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RequestsTable
+      Events:
+        GetMode:
+          Type: Api
+          Properties:
+            Path: /mode
+            Method: get
+            RestApiId: !Ref ApproveApi
+            Auth:
+              ApiKeyRequired: true
+        PutMode:
+          Type: Api
+          Properties:
+            Path: /mode
+            Method: put
+            RestApiId: !Ref ApproveApi
+            Auth:
+              ApiKeyRequired: true
+        PostRequest:
+          Type: Api
+          Properties:
+            Path: /request
+            Method: post
+            RestApiId: !Ref ApproveApi
+            Auth:
+              ApiKeyRequired: true
+        GetRequest:
+          Type: Api
+          Properties:
+            Path: /request
+            Method: get
+            RestApiId: !Ref ApproveApi
+            Auth:
+              ApiKeyRequired: true
+
+  # Alexa Skill Lambda — handles voice intents
+  SkillFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      CodeUri: skill-handler/
+      Timeout: 8
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref RequestsTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RequestsTable
+      Events:
+        AlexaSkill:
+          Type: AlexaSkill
+          Properties:
+            SkillId: amzn1.ask.skill.a46e189f-0cef-43e9-83d9-0078eff85f87
+
+  # API Gateway with API key
+  ApproveApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        ApiKeyRequired: true
+        UsagePlan:
+          CreateUsagePlan: PER_API
+          UsagePlanName: claude-approve-plan
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway URL for the local hook
+    Value: !Sub "https://${ApproveApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  SkillFunctionArn:
+    Description: ARN of the Alexa skill Lambda (paste into Alexa Developer Console)
+    Value: !GetAtt SkillFunction.Arn

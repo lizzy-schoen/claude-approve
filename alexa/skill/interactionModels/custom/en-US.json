@@ -1,0 +1,115 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "agent orange",
+      "intents": [
+        {
+          "name": "CheckPendingIntent",
+          "samples": [
+            "check pending",
+            "check",
+            "what's pending",
+            "any requests",
+            "is there a request",
+            "what does claude want",
+            "what's waiting",
+            "pending requests",
+            "anything pending"
+          ]
+        },
+        {
+          "name": "ApproveIntent",
+          "samples": [
+            "approve",
+            "approve it",
+            "allow",
+            "allow it",
+            "yes",
+            "say yes",
+            "accept",
+            "go ahead",
+            "let it run",
+            "that's fine"
+          ]
+        },
+        {
+          "name": "DenyIntent",
+          "samples": [
+            "deny",
+            "deny it",
+            "reject",
+            "reject it",
+            "no",
+            "say no",
+            "block",
+            "block it",
+            "don't allow it",
+            "stop it"
+          ]
+        },
+        {
+          "name": "EnableVoiceModeIntent",
+          "samples": [
+            "enable voice mode",
+            "switch to voice",
+            "voice mode",
+            "switch to voice mode",
+            "use voice",
+            "turn on voice mode",
+            "enable alexa mode"
+          ]
+        },
+        {
+          "name": "EnableTextModeIntent",
+          "samples": [
+            "enable text mode",
+            "switch to text",
+            "text mode",
+            "switch to text mode",
+            "use text",
+            "turn on text mode",
+            "discord mode",
+            "switch to discord"
+          ]
+        },
+        {
+          "name": "DisableIntent",
+          "samples": [
+            "disable",
+            "turn off",
+            "disable claude approve",
+            "turn off claude approve",
+            "shut down"
+          ]
+        },
+        {
+          "name": "StatusIntent",
+          "samples": [
+            "status",
+            "what mode",
+            "current mode",
+            "what mode am I in",
+            "what's the mode",
+            "check mode"
+          ]
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        }
+      ]
+    }
+  }
+}

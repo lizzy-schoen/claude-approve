@@ -1,3 +1,6 @@
 .env
 .DS_Store
 bot/node_modules/
+alexa/skill-handler/node_modules/
+alexa/.aws-sam/
+alexa/.ask/

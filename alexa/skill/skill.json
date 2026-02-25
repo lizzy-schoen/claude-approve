@@ -1,0 +1,50 @@
+{
+  "manifest": {
+    "publishingInformation": {
+      "locales": {
+        "en-US": {
+          "summary": "Approve or deny Claude Code permission requests by voice.",
+          "examplePhrases": [
+            "Alexa, ask Agent Orange to check pending",
+            "Alexa, tell Agent Orange to approve",
+            "Alexa, tell Agent Orange to enable voice mode"
+          ],
+          "name": "Agent Orange",
+          "description": "Voice interface for approving Claude Code permission requests. Check pending requests, approve or deny by voice, and switch between voice and text approval modes."
+        }
+      },
+      "isAvailableWorldwide": false,
+      "testingInstructions": "This is a personal development skill for approving Claude Code permissions.",
+      "category": "ORGANIZERS_AND_ASSISTANTS",
+      "distributionCountries": []
+    },
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "uri": "arn:aws:lambda:us-west-2:361151528189:function:claude-approve-alexa-SkillFunction-XgQ5Tpji4rjK"
+        }
+      }
+    },
+    "manifestVersion": "1.0",
+    "permissions": [
+      {
+        "name": "alexa::devices:all:notifications:write"
+      }
+    ],
+    "events": {
+      "publications": [
+        {
+          "eventName": "AMAZON.MessageAlert.Activated"
+        }
+      ],
+      "subscriptions": [
+        {
+          "eventName": "SKILL_PROACTIVE_SUBSCRIPTION_CHANGED"
+        }
+      ],
+      "endpoint": {
+        "uri": "arn:aws:lambda:us-west-2:361151528189:function:claude-approve-alexa-SkillFunction-XgQ5Tpji4rjK"
+      }
+    }
+  }
+}

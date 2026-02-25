@@ -1,8 +1,8 @@
 # claude-approve
 
-Approve Claude Code permissions and send commands — all from Discord on your phone.
+Approve Claude Code permissions from Discord or Alexa — on your phone or by voice.
 
-Uses [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) + a Discord bot to turn permission prompts into DM conversations, and optionally let you send follow-up commands remotely.
+Uses [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) to turn permission prompts into remote conversations. Approve via Discord DMs while on a walk, or say "Alexa, approve" while doing the dishes. Optionally send follow-up commands from Discord.
 
 ## How it works
 
@@ -122,17 +122,70 @@ If a permission request is pending when you send a command, the bot tells you to
 
 When you reply via Discord, the bot starts a new `claude -c -p` session that continues the most recent conversation. Claude sees the full history and your reply, so context carries through naturally. However, if you had an interactive terminal session running, that session won't see the Discord messages — the conversations diverge at that point. Once you start replying from Discord, keep using Discord for that session. When you're back at the terminal, `claude -c` will pick up from wherever the conversation left off (including Discord turns).
 
+## Alexa voice approval (optional)
+
+Approve or deny Claude Code permissions by voice. Your Echo chimes with a yellow ring when a request arrives — say "Alexa, ask Claude Approve to check pending" to hear what Claude wants, then "approve" or "deny."
+
+### Alexa setup
+
+Requires an AWS account (free tier) and an Amazon developer account.
+
+```bash
+cd alexa && ./setup.sh
+```
+
+The script deploys a DynamoDB table, API Gateway, and two Lambda functions via AWS SAM, then walks you through creating the Alexa skill in the Developer Console (~10 min total).
+
+### Switching modes
+
+Three approval modes: **text** (Discord), **voice** (Alexa), or **off** (terminal prompts).
+
+From Alexa:
+```
+"Alexa, tell Claude Approve to enable voice mode"
+"Alexa, tell Claude Approve to enable text mode"
+```
+
+From the CLI:
+```bash
+claude-approve mode voice    # Alexa approval + yellow ring notifications
+claude-approve mode text     # Discord approval
+claude-approve mode off      # terminal prompts only
+claude-approve mode          # show current mode
+```
+
+The mode is stored in DynamoDB so Alexa can change it remotely. Walking away from your desk to do chores? Tell Alexa to switch to voice mode. Heading out the door? Switch to text mode so approvals go to Discord on your phone.
+
+### Alexa voice commands
+
+| You say | What happens |
+|---------|-------------|
+| "Alexa, ask Claude Approve to check pending" | Reads the pending request aloud |
+| "Approve" / "Allow" / "Yes" | Approves the request |
+| "Deny" / "Reject" / "No" | Denies the request |
+| "Enable voice mode" | Switches to Alexa approval |
+| "Enable text mode" | Switches to Discord approval |
+| "Status" | Reports current mode |
+
+### Alexa teardown
+
+```bash
+cd alexa && ./teardown.sh
+```
+
+Deletes the CloudFormation stack. Remember to also delete the skill in the [Alexa Developer Console](https://developer.amazon.com/alexa/console/ask).
+
 ## Enable / Disable
 
-Toggle Discord approval on or off without changing your setup:
+Toggle approval on or off without changing your setup:
 
 ```bash
 claude-approve disable   # use normal terminal prompts
-claude-approve enable    # back to Discord approval
+claude-approve enable    # back to remote approval
 claude-approve status    # check current state
 ```
 
-When disabled, Claude Code falls through to its normal terminal permission prompts — no Discord messages are sent. When you re-enable, Discord approval picks back up immediately. Enabled by default after install.
+When disabled, Claude Code falls through to its normal terminal permission prompts — no remote messages are sent. When you re-enable, approval picks back up in whatever mode you were using. Enabled by default after install.
 
 ## Configuration
 
@@ -144,9 +197,14 @@ DISCORD_USER_ID="your-discord-user-id"
 REPLY_TIMEOUT=120        # seconds to wait for reply
 REPLY_POLL_INTERVAL=3    # seconds between checks
 PROJECT_DIR="/path/to/your/project"  # working directory for remote commands
+
+# Alexa settings (added by alexa/setup.sh)
+APPROVAL_CHANNEL="discord"          # "discord", "alexa", or "off"
+ALEXA_API_URL="https://..."         # API Gateway URL
+ALEXA_API_KEY="..."                 # API Gateway API key
 ```
 
-`PROJECT_DIR` is only used by the remote command bot. It defaults to wherever you ran `install.sh`.
+`PROJECT_DIR` is only used by the remote command bot. The Alexa settings are added automatically by `alexa/setup.sh` — you don't need them for Discord-only use.
 
 ## Testing
 
@@ -178,13 +236,21 @@ Removes the hooks from Claude Code settings. Optionally deletes your config.
 
 **Hooks** (bash scripts, no dependencies beyond `jq` and `curl`):
 
-1. **`PermissionRequest` hook** (`hooks/on-permission-request.sh`): Fires when Claude needs tool permission. Opens a DM channel via Discord API, sends the request, then polls for your reply. Returns a JSON decision (allow/deny) that Claude Code respects. Creates a lock file at `/tmp/claude-approve.lock` so the bot knows not to intercept Y/N replies.
+1. **`PermissionRequest` hook** (`hooks/on-permission-request.sh`): Fires when Claude needs tool permission. Checks the current mode (via DynamoDB if Alexa is configured, else local config) and routes to either Discord or Alexa. Returns a JSON decision (allow/deny) that Claude Code respects.
 
-2. **`Notification` hook** (`hooks/on-notify.sh`): Fires when Claude is idle. Reads the most recent session file to extract Claude's last message, then sends it as a DM. Runs async so it doesn't block anything.
+2. **Discord path**: Opens a DM channel via Discord API, sends the request, polls for Y/N reply. Creates a lock file at `/tmp/claude-approve.lock` so the remote command bot doesn't intercept.
+
+3. **Alexa path** (`hooks/alexa-request.sh`): POSTs the request to API Gateway (which stores it in DynamoDB and triggers a yellow ring notification), then polls the API for a decision.
+
+4. **`Notification` hook** (`hooks/on-notify.sh`): Fires when Claude is idle. Reads the most recent session file to extract Claude's last message, then sends it as a Discord DM. Runs async so it doesn't block anything.
 
 **Remote command bot** (`bot/index.js`, Node.js + discord.js):
 
 Connects to Discord via WebSocket and listens for DMs. Routes messages based on content: Y/N goes to the hooks, everything else gets run as `claude -c -p "your message"` in the configured project directory. Output is chunked to fit Discord's 2000-character limit and sent back as DM replies.
+
+**Alexa backend** (`alexa/`, AWS SAM):
+
+A DynamoDB table stores the current mode and pending request. Two Lambda functions: an API handler (behind API Gateway with API key auth) for the local hook to POST/poll requests and get/set mode, and an Alexa skill handler for voice interactions. The API handler also sends proactive events (yellow ring notifications) via the Alexa Events API when a request arrives in voice mode.
 
 ## License
 

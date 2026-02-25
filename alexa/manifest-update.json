@@ -1,0 +1,70 @@
+{
+  "manifest": {
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "uri": "arn:aws:lambda:us-west-2:361151528189:function:claude-approve-alexa-SkillFunction-XgQ5Tpji4rjK"
+        },
+        "interfaces": [],
+        "locales": {}
+      }
+    },
+    "events": {
+      "endpoint": {
+        "uri": "arn:aws:lambda:us-west-2:361151528189:function:claude-approve-alexa-SkillFunction-XgQ5Tpji4rjK"
+      },
+      "publications": [
+        {
+          "eventName": "AMAZON.MessageAlert.Activated"
+        }
+      ],
+      "subscriptions": [
+        {
+          "eventName": "SKILL_PROACTIVE_SUBSCRIPTION_CHANGED"
+        }
+      ]
+    },
+    "manifestVersion": "1.0",
+    "permissions": [
+      {
+        "name": "alexa::devices:all:notifications:write"
+      }
+    ],
+    "publishingInformation": {
+      "category": "ORGANIZERS_AND_ASSISTANTS",
+      "distributionCountries": [],
+      "isAvailableWorldwide": true,
+      "locales": {
+        "en-US": {
+          "description": "Code Approve lets you approve or deny AI coding assistant permission requests by voice through your Alexa device. When your coding assistant needs permission to run a command, edit a file, or perform other actions, you'll get a notification on your Echo device. Simply say 'approve' or 'deny' to respond hands-free. You can also switch between voice mode and text mode, or disable notifications entirely.",
+          "examplePhrases": [
+            "Alexa, open Code Approve",
+            "Alexa, ask Code Approve to check pending",
+            "approve"
+          ],
+          "keywords": [
+            "code",
+            "approve",
+            "developer",
+            "permissions"
+          ],
+          "name": "Code Approve",
+          "smallIconUri": "https://claude-approve-assets-361151528189.s3.us-west-2.amazonaws.com/icons/icon_small.png",
+          "largeIconUri": "https://claude-approve-assets-361151528189.s3.us-west-2.amazonaws.com/icons/icon_large.png",
+          "summary": "Voice approval for AI coding assistant permission requests."
+        }
+      },
+      "testingInstructions": "This skill is used with a CLI tool that sends permission requests to an API. To test: 1) Say 'Alexa, open Code Approve' - should respond with 'No pending requests right now.' 2) Say 'check pending' - should respond with no pending requests. 3) Say 'approve' or 'deny' when no request is pending - should respond appropriately. 4) Say 'enable voice mode' - should confirm voice mode enabled. 5) Say 'status' - should report current mode."
+    },
+    "privacyAndCompliance": {
+      "allowsPurchases": false,
+      "containsAds": false,
+      "isChildDirected": false,
+      "isExportCompliant": true,
+      "usesPersonalInfo": false,
+      "locales": {
+        "en-US": {}
+      }
+    }
+  }
+}

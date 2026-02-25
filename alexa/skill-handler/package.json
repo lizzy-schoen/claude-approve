@@ -1,0 +1,8 @@
+{
+  "name": "claude-approve-alexa-skill",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "ask-sdk-core": "^2.14.0"
+  }
+}
