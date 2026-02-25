@@ -122,58 +122,23 @@ If a permission request is pending when you send a command, the bot tells you to
 
 When you reply via Discord, the bot starts a new `claude -c -p` session that continues the most recent conversation. Claude sees the full history and your reply, so context carries through naturally. However, if you had an interactive terminal session running, that session won't see the Discord messages — the conversations diverge at that point. Once you start replying from Discord, keep using Discord for that session. When you're back at the terminal, `claude -c` will pick up from wherever the conversation left off (including Discord turns).
 
-## Alexa voice approval (optional)
+## Alexa voice approval (optional, experimental)
 
-Approve or deny Claude Code permissions by voice. Your Echo chimes with a yellow ring when a request arrives — say "Alexa, ask Claude Approve to check pending" to hear what Claude wants, then "approve" or "deny."
+> **Beta**: The Alexa integration works but has rough edges — the notification token expires after ~1 hour so you need to occasionally "prime" it by opening the skill, and Alexa can be finicky with invocation name recognition. See [`alexa/README.md`](alexa/README.md) for full details, known issues, and setup instructions.
 
-### Alexa setup
-
-Requires an AWS account (free tier) and an Amazon developer account.
+Approve or deny Claude Code permissions by voice. Your Echo chimes with a yellow ring when a request arrives — say "Alexa, check pending" to hear what Claude wants, then "approve" or "deny."
 
 ```bash
 cd alexa && ./setup.sh
 ```
 
-The script deploys a DynamoDB table, API Gateway, and two Lambda functions via AWS SAM, then walks you through creating the Alexa skill in the Developer Console (~10 min total).
+Three approval modes: **text** (Discord), **voice** (Alexa), or **off** (terminal prompts). Switch from the CLI or by voice:
 
-### Switching modes
-
-Three approval modes: **text** (Discord), **voice** (Alexa), or **off** (terminal prompts).
-
-From Alexa:
-```
-"Alexa, tell Claude Approve to enable voice mode"
-"Alexa, tell Claude Approve to enable text mode"
-```
-
-From the CLI:
 ```bash
 claude-approve mode voice    # Alexa approval + yellow ring notifications
 claude-approve mode text     # Discord approval
 claude-approve mode off      # terminal prompts only
-claude-approve mode          # show current mode
 ```
-
-The mode is stored in DynamoDB so Alexa can change it remotely. Walking away from your desk to do chores? Tell Alexa to switch to voice mode. Heading out the door? Switch to text mode so approvals go to Discord on your phone.
-
-### Alexa voice commands
-
-| You say | What happens |
-|---------|-------------|
-| "Alexa, ask Claude Approve to check pending" | Reads the pending request aloud |
-| "Approve" / "Allow" / "Yes" | Approves the request |
-| "Deny" / "Reject" / "No" | Denies the request |
-| "Enable voice mode" | Switches to Alexa approval |
-| "Enable text mode" | Switches to Discord approval |
-| "Status" | Reports current mode |
-
-### Alexa teardown
-
-```bash
-cd alexa && ./teardown.sh
-```
-
-Deletes the CloudFormation stack. Remember to also delete the skill in the [Alexa Developer Console](https://developer.amazon.com/alexa/console/ask).
 
 ## Enable / Disable
 
